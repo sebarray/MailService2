@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"mailgo/model"
 	"os"
+	"sync"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -15,15 +18,27 @@ import (
 var GmailService *gmail.Service
 
 func OAuthGmailService() {
+	wg := &sync.WaitGroup{}
+	var token model.Token
+	rtoken := os.Getenv("RTOKEN")
 	config := oauth2.Config{
 		ClientID:     os.Getenv("CID"),
 		ClientSecret: os.Getenv("CSECRET"),
 		Endpoint:     google.Endpoint,
 		RedirectURL:  "http://localhost",
+		Scopes:       []string{},
 	}
-	token := getTokenFromWeb(&config)
+	wg.Add(1)
+	go UpdateTokenAcces(wg, &token)
+	wg.Wait()
+	tokens := oauth2.Token{
+		AccessToken:  token.Access,
+		TokenType:    "Bearer",
+		RefreshToken: rtoken,
+		Expiry:       time.Time{},
+	}
 
-	var tokenSource = config.TokenSource(context.Background(), token)
+	var tokenSource = config.TokenSource(context.Background(), &tokens)
 
 	srv, err := gmail.NewService(context.Background(), option.WithTokenSource(tokenSource))
 	if err != nil {
@@ -34,21 +49,5 @@ func OAuthGmailService() {
 	if GmailService != nil {
 		fmt.Println("Email service is initialized ")
 	}
-}
 
-func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
-	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	fmt.Printf("Go to the following link in your browser then type the "+
-		"authorization code: \n%v\n", authURL)
-
-	var authCode string
-	if _, err := fmt.Scan(&authCode); err != nil {
-		log.Fatalf("Unable to read authorization code: %v", err)
-	}
-
-	tok, err := config.Exchange(context.TODO(), authCode)
-	if err != nil {
-		log.Fatalf("Unable to retrieve token from web: %v", err)
-	}
-	return tok
 }
